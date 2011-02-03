@@ -46,7 +46,7 @@ class Fsm : public StateMachine<Fsm> {
 			return State(&Fsm::A);
 		}
 
-		State B(const Event &e) {
+		State B(const Event& e) {
 			printState("B", e);
 			if (typeid(e) == typeid(Event2)) {
 				if (guard_B_onEvent2()) {
@@ -60,13 +60,13 @@ class Fsm : public StateMachine<Fsm> {
 			return State(&Fsm::B);
 		}
 
-		State C(const Event &e) {
+		State C(const Event& e) {
 			printState("C", e);
 			/* ... */
 			return State(&Fsm::C);
 		}
 
-		State D(const Event &e) {
+		State D(const Event& e) {
 			printState("D", e);
 			/* ... */
 			return State(&Fsm::D);
