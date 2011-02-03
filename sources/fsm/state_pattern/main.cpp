@@ -3,30 +3,24 @@
 
 using namespace std;
 
+/* common event type */
 class Event { private: virtual void _use_rtti() {} };
 
-template <class A> class Automaton {
+/* common automaton type */
+template <class SM> class StateMachine {
 	public:
 		void dispatch(const Event& e) {
-			state = state.invoke(static_cast<A*>(this), e);
+			state = (static_cast<SM*>(this)->*state.handler)(e);
 		}
 
 	protected:
-		class State {
-			public:
-				typedef State (A::*Handler)(const Event&);
-
-				State(const Handler& s) : dispatch(s) { }
-
-				State invoke(A* au, const Event& e) const {
-					return (au->*dispatch)(e);
-				}
-		
-			private:
-				Handler dispatch;
+		struct State {
+			typedef State (SM::*Handler)(const Event&);
+			State(const Handler& s) : handler(s) { }
+			Handler handler;
 		};
- 
-		Automaton(const State& s) : state(s) { }
+
+		StateMachine(const State& s) : state(s) { }
 
 	private:
 		State state;
@@ -35,9 +29,9 @@ template <class A> class Automaton {
 class Event1 : public Event { };
 class Event2 : public Event { };
 
-class Fsm : public Automaton<Fsm> {
+class Fsm : public StateMachine<Fsm> {
 	public:
-		Fsm() : Automaton<Fsm>(State(&Fsm::A)) { }
+		Fsm() : StateMachine<Fsm>(State(&Fsm::A)) { }
 
 	private:
 		State A(const Event& e) {
