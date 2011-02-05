@@ -65,7 +65,7 @@ private:
 		/* ... */
 	}
 
-	bool guard_B_onEvent2() { }
+	bool guard_B_onEvent2() { return false; }
 };
 
 int main() {
