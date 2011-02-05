@@ -4,7 +4,7 @@
 using namespace std;
 
 /* common event type */
-class Event { private: virtual void _use_rtti() {} };
+class Event { private: virtual void useRTTI() {} };
 
 /* common automaton type */
 template <class SM> class StateMachine {
@@ -36,11 +36,11 @@ class Fsm : public StateMachine<Fsm> {
 	private:
 		State A(const Event& e) {
 			printState("A", e);
-			if (typeid(e) == typeid(Event1)) {
+			if (dynamic_cast<const Event1*>(&e)) {
 				/* do_A_onEvent1() */
 				return State(&Fsm::B);
 			}
-			else if (typeid(e) == typeid(Event2)) {
+			else if (dynamic_cast<const Event2*>(&e)) {
 				/* do_A_onEvent2() */
 			}
 			return State(&Fsm::A);
@@ -48,7 +48,7 @@ class Fsm : public StateMachine<Fsm> {
 
 		State B(const Event& e) {
 			printState("B", e);
-			if (typeid(e) == typeid(Event2)) {
+			if (dynamic_cast<const Event2*>(&e)) {
 				if (guard_B_onEvent2()) {
 					/* do_B_onEvent2() */
 					return State(&Fsm::A);
