@@ -1,0 +1,5 @@
+./uml                 UML diagrams for FSM (final state machine) and HSM (hierarical state machine)
+./fsm                 FSM implementations
+./fsm/switch          switch-method
+./fsm/state_pattern   state pattern method
+./fsm/qp              QP framework method
