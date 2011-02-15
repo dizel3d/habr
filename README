@@ -3,4 +3,6 @@
 ./fsm/switch          switch-method
 ./fsm/state_pattern   state pattern method
 ./fsm/qp              implementation with QP framework
+./hsm                 HSM implementations
+./hsm/qp              implementation with QP framework
 ./docs                article about QP

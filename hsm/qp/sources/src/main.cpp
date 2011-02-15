@@ -4,25 +4,30 @@
 
 using namespace std;
 
+// сигналы
 enum Signals {
 	PROCEED_SIG = Q_USER_SIG,
 	CANCEL_SIG,
 };
 
+// класс событий, соответствующий сигналу PROCEED_SIG
 struct ProceedEvt : public QEvent {
 	ProceedEvt(int value = 0) : value(value) { sig = PROCEED_SIG; }
 	int value;
 };
 
+// класс событий, соответствующий сигналу CANCEL_SIG
 struct CancelEvt : public QEvent {
 	CancelEvt() { sig = CANCEL_SIG; }
 };
 
+// класс иерархического автомата sm
 class Hsm : public QHsm {
 	public:
 		Hsm() : QHsm((QStateHandler)&initial) { init(); }
 
 	private:
+		// псевдосостояние initial state
 		static QState initial(Hsm* me, const QEvent* e) {
 			return Q_TRAN(&superState);
 		}
@@ -40,6 +45,9 @@ class Hsm : public QHsm {
 					return Q_TRAN(&stateC);
 				}
 			}
+
+			/* QHsm::top - самое верхнее суперсостояние,
+			 * которое просто возвращает Q_HANDLED(). */
 			return Q_SUPER(&QHsm::top);
 		}
 
