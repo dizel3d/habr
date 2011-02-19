@@ -1,0 +1,236 @@
+<h4>Предисловие</h4>
+Данная статья, как мне кажется, будет интересна тем, кто знаком с UML диаграммами состояний и последовательности (statecharts diagram и sequence diagram), а также с <a href="http://ru.wikipedia.org/wiki/%D0%A1%D0%BE%D0%B1%D1%8B%D1%82%D0%B8%D0%B9%D0%BD%D0%BE-%D0%BE%D1%80%D0%B8%D0%B5%D0%BD%D1%82%D0%B8%D1%80%D0%BE%D0%B2%D0%B0%D0%BD%D0%BD%D0%BE%D0%B5_%D0%BF%D1%80%D0%BE%D0%B3%D1%80%D0%B0%D0%BC%D0%BC%D0%B8%D1%80%D0%BE%D0%B2%D0%B0%D0%BD%D0%B8%D0%B5">событийно-ориентированным программированием</a> (event-driven programming).
+
+<h4>Вступление</h4>
+Кроссплатформенный фреймворк <a href="http://www.state-machine.com/downloads/index.php#QP">QP</a> (Quantum Platform) от компании <a href="http://www.state-machine.com/">Quantum Leaps</a> представлен его создателями как средство разработки RTOS на C/C++. Он позволят существенно увеличить скорость разработки и надежность приложений, а также имеет мощный инструментарий по отладке и логированию. Ко всему этому добавляется еще и то, что QP является очень гибким и легким: разделен на множество модулей, почти каждый из которых можно реализовать самому при сборке фреймворка или воспользоваться предложенным решением; множество настроек выполняется во время прекомпиляции.
+
+<img src="http://habreffect.ru/files/c72/6c08e98f4/qp.jpg" alt="QP-components"/>
+
+Статья является неявным рассмотрением модуля QEP, являющегося основой фреймворка (QEP реализует обработку событий), и написана с целью сподвигнуть на дальнейшее изучение.
+
+<h4>Система обработки событий в QP</h4>
+Для реализации диаграмм состояний QP предоставляет UML-совместимую систему обработки событий. Но стоит обратить внимание на одно обстоятельство: фреймворком поддерживаются только локальные переходы, т. е. переход в подсостояние не сопровождается событием exit, а переход в суперсостояние не возбуждает событие entry. В UML 2 для совместимости с прошлыми версиями была оставлена возможность делать внешние переходы. В более ранних версиях языка доступны только внешние переходы: любой переход сопровождается событием exit и entry для текущего и целевого состояний соответственно.
+
+<img src="http://habreffect.ru/files/991/032258116/tran.png" alt="image"/>
+
+Разработчику QP предлагает следующие классы:
+<b>QFsm</b> для реализации одноуровневого конечного автомата (без суперсостояний)
+<b>QHsm</b> для реализации иерархического автомата (с суперсостояниями)
+Объекты этих классов хранят текущее состояние UML-диаграммы, и имеют публичный метод <code><font color="#0000ff">void</font>&nbsp;dispatch<font color="#008000">&#40;</font><font color="#0000ff">const</font>&nbsp;QEvent<font color="#000040">*</font>&nbsp;e<font color="#008000">&#41;</font></code> для обработки события.
+Также QP предоставляет класс <b>QActive</b>, по-умолчанию являющийся расширением <b>QHsm</b> (можно сменить на <b>QFsm</b>). Объекты данного класса, называемые активными объектами, реализуют возможность работы автомата в отдельном потоке выполнения.
+
+Событие в QP — это объекты класса <b>QEvent</b> или его наследники. Каждое событие характеризуется сигналом — поле <i>sig</i>, отличающее один тип события от другого.
+
+Состояние в QP — это функция (или статический метод), указатель на которую имеет вид:
+<code><font color="#0000ff">typedef</font>&nbsp;QState&nbsp;<font color="#008000">&#40;</font><font color="#000040">*</font>QStateHandler<font color="#008000">&#41;</font><font color="#008000">&#40;</font><font color="#0000ff">void</font>&nbsp;<font color="#000040">*</font>me,&nbsp;QEvent&nbsp;<font color="#0000ff">const</font>&nbsp;<font color="#000040">*</font>e<font color="#008000">&#41;</font></code>, где <i>me</i> — контекст (объект автомата), <i>e</i> — поступившее событие
+
+Фреймворк предусматривает для состояния три основных способа обработки события:
+<ul><li><i>Q_HANDLED()</i>, если нужно просто обработать событие, не совершая перехода;</li>
+	<li><i>Q_TRAN(<адрес следующего состояния>)</i> - сделать переход;</li>
+	<li><i>Q_SUPER(<адрес суперсостояния>)</i> - передать суперсостоянию. Доступно только для QHsm-автоматов.</li></ul>
+QP также имеет специальные события, которые могут генерироваться при переходе. Порядок возникновения этих событий и последовательность действий при совершении перехода следующие:
+<ol><li>выполняются атомарные действия перехода;</li>
+	<li>событие exit (<i>Q_EXIT_SIG</i>). Возникает в текущем состоянии при выходе из него. Если к тому же происходит выход из суперсостояния, то exit для этого суперсостояния происходит сразу после exit для текущего. Событие exit может быть только обработано (<i>Q_HANDLED</i>);</li>
+	<li>автомат переходит в целевое состояние;</li>
+	<li>событие entry (<i>Q_ENTRY_SIG</i>). Возникает при входе в состояние. Это событие может быть только обработано;</li>
+	<li>событие с сигналом <i>Q_INIT_SIG</i> (только для <b>QHsm</b>-автоматов) — инициализирующее событие. Возникает всегда. Служит для совершения перехода (<i>Q_TRAN</i>) в подсостояние, но в принципе его тоже можно просто обработать;</li></ol>
+Общий вид <b>QFsm</b> состояний:
+<blockquote><code><font size="2" face="Courier New" color="black"><font color="#0000ff">static</font> QState state1(Fsm* me, <font color="#0000ff">const</font> QEvent* e) {
+&nbsp;&nbsp;&nbsp;&nbsp;<font color="#0000ff">switch</font>(e-&#62;sig) {
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#0000ff">case</font> Q_ENTRY_SIG: {
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#008000">/* processing */</font>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#0000ff">return</font> Q_HANDLED();
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#0000ff">case</font> EVENT1_SIG: {
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#008000">/* processing */</font>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#0000ff">return</font> Q_TRAN(&#38;state2);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#0000ff">case</font> EVENT2_SIG: {
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#008000">/* processing */</font>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#0000ff">return</font> Q_HANDLED();
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#0000ff">case</font> Q_EXIT_SIG: {
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#008000">/* processing */</font>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#0000ff">return</font> Q_HANDLED();
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;<font color="#0000ff">return</font> Q_HANDLED();
+}</font>
+
+<font size="1" color="gray">* This source code was highlighted with <a href="http://virtser.net/blog/post/source-code-highlighter.aspx"><font size="1" color="gray">Source Code Highlighter</font></a>.</font></code></blockquote>
+
+Общий вид <b>QHsm</b> состояний:
+<blockquote><code><font size="2" face="Courier New" color="black"><font color="#0000ff">static</font> QState state1(Hsm* me, <font color="#0000ff">const</font> QEvent* e) {
+&nbsp;&nbsp;&nbsp;&nbsp;<font color="#0000ff">switch</font>(e-&#62;sig) {
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#0000ff">case</font> Q_ENTRY_SIG: {
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#008000">/* processing */</font>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#0000ff">return</font> Q_HANDLED();
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#0000ff">case</font> Q_INIT_SIG: {
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#008000">/* processing */</font>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#0000ff">return</font> Q_TRAN(&#38;state1_substate1); <font color="#008000">// return Q_HANDLED();</font>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#0000ff">case</font> EVENT1_SIG: {
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#008000">/* processing */</font>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#0000ff">return</font> Q_TRAN(&#38;state2);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#0000ff">case</font> EVENT2_SIG: {
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#008000">/* processing */</font>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#0000ff">return</font> Q_HANDLED();
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#0000ff">case</font> Q_EXIT_SIG: {
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#008000">/* processing */</font>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#0000ff">return</font> Q_HANDLED();
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;<font color="#0000ff">return</font> Q_SUPER(&#38;superstate1);
+}</font>
+
+<font size="1" color="gray">* This source code was highlighted with <a href="http://virtser.net/blog/post/source-code-highlighter.aspx"><font size="1" color="gray">Source Code Highlighter</font></a>.</font></code></blockquote>
+
+Специальные события типа <i>Q_ENTRY_SIG</i>, <i>Q_INIT_SIG</i>, <i>Q_EXIT_SIG</i> существуют в рамках одного состояния и не делегируются суперсостоянию, обрабатывать их необязательно.
+
+<h4>Пример</h4>
+Рассмотрим систему с одним активным объектом (<i>sm</i>) и односторонним воздействием на него. В этом случае можно обойтись без использования модуля многозадачности (QK) и класса <b>QActive</b>.
+
+<a target="_blank" title="Хабрэффект.ру" href="http://habreffect.ru/e4e/51aa4bbe7/seq.png"><img border="0" src="http://habreffect.ru/files/e4e/51aa4bbe7/seq.png"/></a>
+
+Пусть объект <i>sm</i> имеет диаграмму состояний, являющуюся иерархическим конечным автоматом.
+
+<a target="_blank" title="Хабрэффект.ру" href="http://habreffect.ru/4e6/b35932e85/stch.png"><img border="0" src="http://habreffect.ru/files/4e6/b35932e85/stch.png"/></a>
+
+Вот так можно реализовать эту задачу, используя QP:
+<blockquote><code><font size="2" face="Courier New" color="black"><font color="#008000">// сигналы</font>
+<font color="#0000ff">enum</font> Signals {
+&nbsp;&nbsp;&nbsp;&nbsp;PROCEED_SIG = Q_USER_SIG,
+&nbsp;&nbsp;&nbsp;&nbsp;CANCEL_SIG,
+};
+
+<font color="#008000">// класс событий, соответствующий сигналу PROCEED_SIG</font>
+<font color="#0000ff">struct</font> ProceedEvt : <font color="#0000ff">public</font> QEvent {
+&nbsp;&nbsp;&nbsp;&nbsp;ProceedEvt(<font color="#0000ff">int</font> <font color="#0000ff">value</font> = 0) : <font color="#0000ff">value</font>(<font color="#0000ff">value</font>) { sig = PROCEED_SIG; }
+&nbsp;&nbsp;&nbsp;&nbsp;<font color="#0000ff">int</font> <font color="#0000ff">value</font>;
+};
+
+<font color="#008000">// класс событий, соответствующий сигналу CANCEL_SIG</font>
+<font color="#0000ff">struct</font> CancelEvt : <font color="#0000ff">public</font> QEvent {
+&nbsp;&nbsp;&nbsp;&nbsp;CancelEvt() { sig = CANCEL_SIG; }
+};
+
+<font color="#008000">// класс иерархического автомата sm</font>
+<font color="#0000ff">class</font> Hsm : <font color="#0000ff">public</font> QHsm {
+&nbsp;&nbsp;&nbsp;&nbsp;<font color="#0000ff">public</font>:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Hsm() : QHsm((QStateHandler)&#38;initial) { init(); }
+
+&nbsp;&nbsp;&nbsp;&nbsp;<font color="#0000ff">private</font>:
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#008000">// псевдосостояние initial state</font>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#0000ff">static</font> QState initial(Hsm* me, <font color="#0000ff">const</font> QEvent* e) {
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#0000ff">return</font> Q_TRAN(&#38;superState);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#0000ff">static</font> QState superState(Hsm* me, <font color="#0000ff">const</font> QEvent* e) {
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#0000ff">switch</font> (e-&#62;sig) {
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#0000ff">case</font> Q_ENTRY_SIG: {
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;me-&#62;count = 10;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#0000ff">return</font> Q_HANDLED();
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#0000ff">case</font> Q_INIT_SIG:&nbsp;{
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#0000ff">return</font> Q_TRAN(&#38;stateA);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#0000ff">case</font> CANCEL_SIG: {
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#0000ff">return</font> Q_TRAN(&#38;stateC);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#008000">/* QHsm::top - самое верхнее суперсостояние,</font>
+<font color="#008000">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; * которое просто возвращает Q_HANDLED(). */</font>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#0000ff">return</font> Q_SUPER(&#38;QHsm::top);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#0000ff">static</font> QState stateA(Hsm* me, <font color="#0000ff">const</font> QEvent* e) {
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#0000ff">switch</font> (e-&#62;sig) {
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#0000ff">case</font> PROCEED_SIG: {
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#0000ff">return</font> Q_TRAN(&#38;stateB);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#0000ff">return</font> Q_SUPER(&#38;superState);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#0000ff">static</font> QState stateB(Hsm* me, <font color="#0000ff">const</font> QEvent* e) {
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#0000ff">switch</font> (e-&#62;sig) {
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#0000ff">case</font> PROCEED_SIG: {
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#0000ff">if</font> (me-&#62;count &#62; 1) {
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;me-&#62;count *= 2;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#0000ff">return</font> Q_TRAN(&#38;stateA);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;++me-&#62;count;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#0000ff">return</font> Q_HANDLED();
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#0000ff">case</font> Q_EXIT_SIG: {
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;cout &#60;&#60; <font color="#A31515">"count = "</font> &#60;&#60; me-&#62;count &#60;&#60; endl;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;me-&#62;count = 0;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#0000ff">return</font> Q_HANDLED();
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#0000ff">return</font> Q_SUPER(&#38;superState);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#0000ff">static</font> QState stateC(Hsm* me, <font color="#0000ff">const</font> QEvent* e) {
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#0000ff">switch</font> (e-&#62;sig) {
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#0000ff">case</font> PROCEED_SIG: {
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#0000ff">if</font> (static_cast&#60;<font color="#0000ff">const</font> ProceedEvt*&#62;(e)-&#62;<font color="#0000ff">value</font> == 1) {
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#0000ff">return</font> Q_TRAN(&#38;superState);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#0000ff">break</font>;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#0000ff">return</font> Q_SUPER(&#38;QHsm::top);
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#0000ff">int</font> count;
+};</font>
+
+<font size="1" color="gray">* This source code was highlighted with <a href="http://virtser.net/blog/post/source-code-highlighter.aspx"><font size="1" color="gray">Source Code Highlighter</font></a>.</font></code></blockquote>
+
+Теперь создадим объект <i>sm</i> класса <b>Hsm</b> (см. диаграмму последовательности выше) и обработаем десяток событий:
+<blockquote><code><font size="2" face="Courier New" color="black"><font color="#0000ff">int</font> main(<font color="#0000ff">int</font> argc, <font color="#0000ff">char</font>* argv[]) {
+&nbsp;&nbsp;&nbsp;&nbsp;Hsm sm; <font color="#008000">// stateA, count = 10</font>
+
+&nbsp;&nbsp;&nbsp;&nbsp;<font color="#0000ff">for</font> (<font color="#0000ff">int</font> i = 0; i &#60; 2; ++i) {
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;sm.dispatch(&#38;ProceedEvt());&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#008000">// stateB, count = 10</font>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;sm.dispatch(&#38;ProceedEvt());&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#008000">// stateA, count = 0</font>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;sm.dispatch(&#38;ProceedEvt());&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#008000">// stateB, count = 0</font>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;sm.dispatch(&#38;ProceedEvt());&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#008000">// stateB, count = 1</font>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;sm.dispatch(&#38;ProceedEvt());&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#008000">// stateB, count = 2</font>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;sm.dispatch(&#38;ProceedEvt());&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#008000">// stateA, count = 0</font>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;sm.dispatch(&#38;ProceedEvt());&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#008000">// stateB, count = 0</font>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;sm.dispatch(&#38;ProceedEvt());&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#008000">// stateB, count = 1</font>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;sm.dispatch(&#38;ProceedEvt());&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#008000">// stateB, count = 2</font>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;sm.dispatch(&#38;CancelEvt());&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#008000">// stateC, count = 2</font>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;sm.dispatch(&#38;CancelEvt());&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#008000">// stateC, count = 2</font>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;sm.dispatch(&#38;ProceedEvt());&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#008000">// stateC, count = 2</font>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;sm.dispatch(&#38;ProceedEvt(1));&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#008000">// stateA, count = 10</font>
+&nbsp;&nbsp;&nbsp;&nbsp;}
+
+&nbsp;&nbsp;&nbsp;&nbsp;<font color="#0000ff">return</font> 0;
+}</font>
+
+<font size="1" color="gray">* This source code was highlighted with <a href="http://virtser.net/blog/post/source-code-highlighter.aspx"><font size="1" color="gray">Source Code Highlighter</font></a>.</font></code></blockquote>
+
+<h4>Заключение</h4>
+Остальные средства UML statecharts: псевдосостояния initial, final, history, deep history и прочие; отложенная обработка событий, ортогональный компонент состояния, скрытое состояние и т. д. — довольно просто реализуются с помощь «паттернов проектирования состояний» (state design patterns), пять из которых приведены в книге, о которой я расскажу ниже.
+
+<h5>Преимущества QP</h5><ul><li>принцип использования в C почти не отличается от C++;</li>
+	<li>является opensource, исходники хорошо прокомментированы;</li>
+	<li>QP уже портирован на множество систем, в частности на GNU Linux системы;</li>
+	<li>существует средство моделирования диаграмм состояний QM от Quantum Leaps;</li>
+	<li>продукцией Quantum Leaps пользуются довольно крупные <a href="http://www.state-machine.com/about/customers.php">компании</a>.</li></ul>
+<h5>О книге</h5>
+К QP прилагается большая книга «Practical UML Statecharts in C/C++, Second Edition: Event-Driven Programming for Embedded Systems» от <a href="http://www.linkedin.com/in/samek">основателя компании</a> Quantum Leaps, которая разделена на 2 части: в первой говорится о том, как использовать фреймворк, а вторая посвящена тому, как это работает, как заточить QP под свою систему, как использовать трейсер QS (QSpy), и что такое QP-nano.
+
+Также в учебном пособии приведены сравнения использования фреймворка, паттерна state и switch-метода.
+
+Книга стоит денег, но можно найти в Интернете по запросу «скачать бесплатно».
+
+<h5>Ссылки</h5><ul><li><a href="https://github.com/dizel3d/habr/tree/qp1">здесь</a> примеры к статье;</li>
+	<li><a href="https://github.com/dizel3d/qpcpp">здесь</a> 32-битный порт QP для GNU Linux x64.</li></ul>
